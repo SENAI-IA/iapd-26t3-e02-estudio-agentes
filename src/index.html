@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+  <title>Estúdio</title>
+  <link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+  <nav class="trilho">
+    <div class="logo" title="Estúdio">E</div>
+    <button class="ativo" title="Estúdio">▣</button>
+    <button id="btn-conversas" title="Conversas">☰</button>
+    <button id="btn-novo-agente" title="Novo agente">＋</button>
+    <span class="vao"></span>
+    <button id="btn-modo" title="Modo de execução">⚡</button>
+  </nav>
+
+  <main class="estudio">
+    <header class="topo">
+      <div>
+        <h1>Estúdio</h1>
+        <p class="sub"><span id="status">0 de 5 trabalhando</span> <span id="modo" class="modo"></span></p>
+      </div>
+      <button id="btn-projeto" class="pilula">📁 <span id="nome-projeto">Sem projeto</span></button>
+    </header>
+
+    <section id="palco" class="palco"></section>
+
+    <form id="compositor" class="compositor">
+      <div id="chips" class="chips"></div>
+      <div class="caixa">
+        <textarea id="entrada" rows="1" placeholder="Fale com o time..."></textarea>
+        <button type="submit" class="enviar" title="Enviar">↑</button>
+      </div>
+      <p class="dica"><span id="destino-dica">O time decide quem responde</span><span><kbd>Enter</kbd> enviar · <kbd>Shift</kbd>+<kbd>Enter</kbd> nova linha</span></p>
+    </form>
+  </main>
+
+  <aside class="painel">
+    <header class="painel-topo">
+      <span id="titulo-conversa">Nova conversa</span>
+      <button id="btn-nova-conversa" title="Nova conversa">＋</button>
+    </header>
+    <div id="lista-conversas" class="lista-conversas" hidden></div>
+    <div id="mensagens" class="mensagens"></div>
+    <div id="trabalhando" class="trabalhando" hidden></div>
+  </aside>
+
+  <dialog id="dlg-agente">
+    <form method="dialog" id="form-agente">
+      <h2>Novo agente</h2>
+      <label>Nome <input name="nome" required maxlength="20"></label>
+      <label>Papel <input name="papel" required placeholder="Ex.: Banco de dados"></label>
+      <label>Personalidade <input name="personalidade" placeholder="Ex.: Paciente e didático"></label>
+      <label>Palavras que ele assume (vírgulas) <input name="palavras" placeholder="sql, tabela, migracao"></label>
+      <div class="linha">
+        <label>Provedor <select name="provedor"><option>claude</option><option>gemini</option><option>codex</option></select></label>
+        <label>Visual <select name="forma"><option value="bloco">Bloco</option><option value="estrela">Estrela</option><option value="nuvem">Nuvem</option></select></label>
+        <label>Cor <input type="color" name="cor" value="#5fb3a1"></label>
+      </div>
+      <p id="erro-agente" class="erro"></p>
+      <menu><button value="cancelar" formnovalidate>Cancelar</button><button value="criar" class="primario">Criar</button></menu>
+    </form>
+  </dialog>
+
+  <script type="module" src="renderer.mjs"></script>
+</body>
+</html>

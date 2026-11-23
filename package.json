@@ -1,0 +1,13 @@
+{
+  "name": "estudio-agentes",
+  "version": "0.1.0",
+  "description": "Estúdio: time visual de agentes de IA (engenharia reversa de um post do LinkedIn)",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "electron": "45.4.1"
+  }
+}
