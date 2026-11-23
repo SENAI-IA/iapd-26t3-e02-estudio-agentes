@@ -35,8 +35,11 @@ function existe(cmd) {
 // em modo -p, qualquer outra ferramenta é negada automaticamente.
 const COMANDOS = {
   claude: (prompt) => ['claude', ['-p', prompt, '--output-format', 'text', '--allowedTools', 'Read,Grep,Glob']],
-  gemini: (prompt) => ['gemini', ['-p', prompt]],
-  codex: (prompt) => ['codex', ['exec', '--sandbox', 'read-only', prompt]],
+  // --skip-trust: em modo -p o gemini recusa pasta "não confiável"; a pasta é a que a pessoa escolheu.
+  // --approval-mode plan: só leitura, como o claude.
+  gemini: (prompt) => ['gemini', ['--skip-trust', '--approval-mode', 'plan', '-o', 'text', '-p', prompt]],
+  // --skip-git-repo-check: sem ele o codex recusa pastas fora de um repositório git confiável.
+  codex: (prompt) => ['codex', ['exec', '--sandbox', 'read-only', '--skip-git-repo-check', prompt]],
 };
 
 ipcMain.handle('provedores', () =>
