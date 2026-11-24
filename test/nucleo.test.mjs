@@ -14,6 +14,21 @@ test('R2 normalizar tira acento e caixa', () => {
   assert.equal(n.normalizar('Página DE Revisão'), 'pagina de revisao');
 });
 
+test('R2b palavra-chave casa com a palavra inteira, não com pedaço dela', () => {
+  const w = n.palavrasDo('Revise o código e corrija os bugs; mude as cores. Como funciona o backend?');
+  assert.ok(n.casaChave(w, 'cor')); // "cores" é plural de "cor"
+  assert.equal(n.casaChave(n.palavrasDo('corrija isso'), 'cor'), false);
+  assert.ok(n.casaChave(w, 'revis') && n.casaChave(w, 'bug') && n.casaChave(w, 'corrij'));
+  assert.ok(n.casaChave(w, 'como funciona') && n.casaChave(w, 'backend'));
+  assert.equal(n.casaChave(n.palavrasDo('qualidade'), 'qual'), false);
+  assert.equal(n.casaChave(n.palavrasDo('telefone'), 'tela'), false);
+});
+
+test('R2b "corrija os bugs" não chama o Pixel', () => {
+  const { etapas } = n.montarTime(T, n.rodadaDePropostas(T, 'Revise o código da pasta e corrija os bugs que encontrar'));
+  assert.deepEqual(etapas, [['revisor']]);
+});
+
 test('R3 proposta: confiança por palavra, aceite a partir de 40%, coordenador passa', () => {
   const chevron = n.proporAgente(T[2], PEDIDO);
   assert.equal(chevron.confianca, 95);
