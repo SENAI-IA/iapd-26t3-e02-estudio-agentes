@@ -17,19 +17,19 @@ export const TIME_PADRAO = Object.freeze([
   },
   {
     id: 'chevron', nome: 'Chevron', papel: 'Back-end', provedor: 'claude', forma: 'bloco', cor: '#e88a5c',
-    palavras: ['endpoint', 'api', 'rota', 'servidor', 'banco', 'health', 'back', 'status', 'dados', 'sql',
+    palavras: ['endpoint', 'api', 'rota', 'servidor', 'banco', 'health', 'back', 'backend', 'status', 'dados', 'sql',
       'autentica', 'json', 'login', 'cache', 'fila', 'webhook'],
     personalidade: 'Pragmático, um pouco ranzinza, obcecado por código que aguenta produção.',
   },
   {
     id: 'scout', nome: 'Scout', papel: 'Pesquisa', provedor: 'gemini', forma: 'estrela', cor: '#9a7cf0',
-    palavras: ['pesquis', 'documentacao', 'referencia', 'compar', 'qual', 'melhor', 'biblioteca', 'oficial',
+    palavras: ['pesquis', 'documentacao', 'referencia', 'compar', 'qual', 'quais', 'melhor', 'biblioteca', 'oficial',
       'como funciona', 'pesquisar', 'alternativa', 'padrao'],
     personalidade: 'Curioso. Sempre cita a fonte oficial.',
   },
   {
     id: 'revisor', nome: 'Revisor', papel: 'Revisão de código', provedor: 'codex', forma: 'nuvem', cor: '#3f7bf2',
-    palavras: ['revis', 'bug', 'teste', 'review', 'erro', 'seguranca', 'corrig', 'falha', 'vulnerab'],
+    palavras: ['revis', 'bug', 'teste', 'testa', 'review', 'erro', 'seguranca', 'corrig', 'corrij', 'falha', 'vulnerab'],
     personalidade: 'Cético e cuidadoso. Procura o bug que ninguém viu.',
   },
 ]);
@@ -43,6 +43,28 @@ export function normalizar(texto) {
   return String(texto ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 }
 
+// ---------- R2b: palavra-chave casa com palavra inteira, não com pedaço ----------
+// Chave com 5+ letras é radical e casa com o começo da palavra ("revis" → "revise", "revisão").
+// Chave curta precisa da palavra inteira ou do plural ("cor" → "cor", "cores"; nunca "corrija").
+// Chave com várias palavras ("como funciona") precisa delas em sequência.
+export function palavrasDo(texto) {
+  return normalizar(texto).split(/[^a-z0-9]+/).filter(Boolean);
+}
+
+function casaPalavra(palavra, chave, ultima) {
+  if (palavra === chave || palavra === chave + 's' || palavra === chave + 'es') return true;
+  return ultima && chave.length >= 5 && palavra.startsWith(chave);
+}
+
+export function casaChave(palavras, chave) {
+  const partes = palavrasDo(chave);
+  if (!partes.length) return false;
+  for (let i = 0; i + partes.length <= palavras.length; i++) {
+    if (partes.every((c, j) => casaPalavra(palavras[i + j], c, j === partes.length - 1))) return true;
+  }
+  return false;
+}
+
 // ---------- R3: proposta de um agente ----------
 // Confiança: 10% de base + 30% por palavra do papel encontrada no pedido (máx. 95%).
 // Aceita a partir de 40%. O coordenador nunca executa: só monta o time.
@@ -53,7 +75,8 @@ export function proporAgente(agente, pedido) {
   if (agente.coordenador) {
     return { id: agente.id, confianca: 15, aceita: false, fala: 'Coordeno, mas não sou eu quem executa isso.' };
   }
-  const acertos = agente.palavras.filter((p) => texto.includes(normalizar(p)));
+  const palavras = palavrasDo(texto);
+  const acertos = agente.palavras.filter((p) => casaChave(palavras, p));
   const confianca = Math.min(95, 10 + acertos.length * 30);
   const aceita = confianca >= LIMIAR_ACEITE;
   return { id: agente.id, confianca, aceita, acertos, fala: falaDaProposta(agente, aceita) };

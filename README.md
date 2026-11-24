@@ -11,7 +11,7 @@ Precisa de Node.js 20+.
 ```bash
 npm install
 npm start      # abre o app (na primeira vez o Electron baixa o próprio executável, ~100 MB)
-npm test       # 19 testes das regras R1–R17
+npm test       # 21 testes das regras R1–R17
 ```
 
 Depois, dê a cada IA uma forma de acesso: chave de API ou CLI logada (próxima seção).
