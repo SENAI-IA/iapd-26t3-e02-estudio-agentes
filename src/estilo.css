@@ -77,11 +77,19 @@ kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--linha); border
 .avatar { width: 22px; height: 22px; border-radius: 6px; background: var(--cor); }
 .msg .cab { font-weight: 600; font-size: 12px; }
 .msg .cab small { font-weight: 400; color: var(--apagado); margin-left: 6px; }
-.msg .corpo { white-space: pre-wrap; word-wrap: break-word; color: #d8d3cb; }
+.msg .corpo { white-space: pre-wrap; overflow-wrap: anywhere; color: #d8d3cb; }
+.msg .corpo code { font: 11.5px ui-monospace, monospace; background: #0f0e0d; border-radius: 3px; padding: 0 3px; }
+.msg.falhou .corpo { color: #e9a19c; }
+.mensagens { overflow-x: hidden; }
+.modo.alerta { background: #4a2523; color: #f0b3ae; }
+.arquivos button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 3px 0; color: var(--texto); font: 12px ui-monospace, monospace; overflow-wrap: anywhere; }
+.arquivos button:hover { color: var(--amarelo); }
+.arquivos .pasta { margin-top: 6px; color: var(--apagado); font-family: inherit; }
+.arquivos p { margin: 0; color: var(--apagado); font-size: 12px; }
 .msg .corpo pre { white-space: pre-wrap; background: #0f0e0d; border: 1px solid var(--linha); border-radius: 6px; padding: 6px 8px; font-size: 11.5px; margin: 4px 0; }
 .etiquetas { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
 .etiquetas span { font-size: 10.5px; padding: 0 6px; border-radius: 4px; background: color-mix(in srgb, var(--cor) 22%, transparent); color: var(--cor); }
-.simulado { font-size: 10px; color: var(--apagado); border: 1px dashed #444; border-radius: 4px; padding: 0 4px; margin-left: 6px; }
+.selo { font-size: 10px; color: var(--apagado); border: 1px dashed #444; border-radius: 4px; padding: 0 4px; margin-left: 6px; }
 
 .rodada { border: 1px solid var(--linha); border-radius: 10px; padding: 10px; background: #161513; }
 .rodada h3 { margin: 0 0 8px; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--apagado); font-weight: 600; }
@@ -120,3 +128,7 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
 dialog menu button { border: 1px solid var(--linha); background: #24211e; border-radius: 6px; padding: 6px 14px; }
 dialog .primario { background: var(--acento); color: #1b0f0a; border-color: var(--acento); font-weight: 600; }
 .erro { color: var(--vermelho); min-height: 1em; margin: 0; font-size: 12px; }
+
+details.arquivo { margin: 4px 0; border: 1px solid var(--linha); border-radius: 6px; background: #0f0e0d; }
+details.arquivo summary { cursor: pointer; padding: 3px 8px; font: 11.5px ui-monospace, monospace; color: var(--amarelo); }
+details.arquivo pre { margin: 0; border: 0; border-top: 1px solid var(--linha); border-radius: 0; max-height: 260px; overflow: auto; }

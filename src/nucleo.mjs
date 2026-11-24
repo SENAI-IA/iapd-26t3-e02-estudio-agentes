@@ -143,14 +143,25 @@ export function extrairComandos(texto) {
 
 // ---------- R9: prompt de cada agente ----------
 // O agente recebe o papel, a personalidade, o pedido e o que as etapas anteriores entregaram.
-export function montarPrompt(agente, pedido, anteriores = []) {
+export function montarPrompt(agente, pedido, anteriores = [], { modo = 'cli' } = {}) {
   const contexto = anteriores.length
     ? '\n\nO que o time já entregou:\n' + anteriores.map((r) => `--- ${r.nome} (${r.papel}) ---\n${r.texto}`).join('\n\n')
     : '';
+  const escreve = podeEscrever(agente);
+  const pasta = modo === 'api'
+    ? (escreve
+      ? 'Para criar ou editar arquivos, devolva cada arquivo COMPLETO num bloco que começa com ```arquivo:caminho/relativo '
+        + '(ex.: ```arquivo:index.html) e termina com ```. O Estúdio grava esses blocos na pasta do projeto.'
+      : 'Você não acessa a pasta do projeto: trabalhe com o que o time entregou abaixo.')
+    : (escreve
+      ? 'Você trabalha direto na pasta do projeto (o diretório atual). Crie ou edite os arquivos que a sua parte precisa '
+        + 'usando caminhos relativos ao diretório atual, sem pedir confirmação. No fim, liste os arquivos que criou ou alterou.'
+      : 'Você só pode ler a pasta do projeto (o diretório atual). Abra e leia os arquivos que o time criou antes de responder.');
   return [
     `Você é ${agente.nome}, agente de ${agente.papel} num time de IAs chamado Estúdio.`,
     `Personalidade: ${agente.personalidade || 'objetiva.'}`,
-    'Responda em português do Brasil, curto (até 15 linhas), só sobre a sua parte.',
+    pasta,
+    'Responda em português do Brasil. Fora dos arquivos, seja curto (até 15 linhas) e fale só da sua parte.',
     'Se sugerir comandos de terminal, coloque-os num bloco ```bash.',
     `\nPedido do usuário: ${pedido}${contexto}`,
   ].join('\n');
@@ -203,19 +214,63 @@ function encurtar(texto, max) {
   return texto.length > max ? texto.slice(0, max - 1) + '…' : texto;
 }
 
-// ---------- R13: resposta simulada (quando a IA real não está disponível) ----------
-export function respostaSimulada(agente, pedido) {
-  const p = String(pedido).trim();
-  switch (agente.id) {
-    case 'scout':
-      return `Achei a referência oficial para "${p}". Recomendo seguir o padrão da documentação do framework e devolver JSON com status e versão.`;
-    case 'pixel':
-      return 'Montei a tela: cabeçalho com o estado geral, um cartão por serviço com cor + texto (não só cor, por acessibilidade) e atualização a cada 30 s.';
-    case 'chevron':
-      return 'Rota pronta:\n\n```js\napp.get(\'/health\', (req, res) => res.json({ status: \'ok\', uptime: process.uptime() }));\n```\n\nPara testar:\n\n```bash\nnpm test\ncurl -s localhost:3000/health\n```';
-    case 'revisor':
-      return 'Revisei. Um problema real: a rota responde 200 mesmo quando o banco caiu. Sugiro checar a conexão e devolver 503 nesse caso.';
-    default:
-      return `${agente.nome} (${agente.papel}) cuidou da sua parte de "${p}".`;
+// ---------- R13: quem pode escrever na pasta do projeto ----------
+// Quem executa (front, back, agentes criados) edita os arquivos direto na pasta.
+// Coordenador, pesquisa e revisão só leem.
+export function podeEscrever(agente) {
+  return !agente.coordenador && agente.papel !== 'Pesquisa' && agente.papel !== 'Revisão de código';
+}
+
+// ---------- R14: arquivos que a rodada criou ou alterou ----------
+const IGNORAR = new Set(['node_modules', '.git', 'dist', 'build', '.cache', '.next', '__pycache__', '.venv']);
+
+export function ignorarCaminho(nome) {
+  return IGNORAR.has(nome);
+}
+
+export function arquivosAlterados(arquivos, desde) {
+  return arquivos.filter((a) => a.mtimeMs >= desde).map((a) => a.caminho).sort();
+}
+
+// ---------- R15: chaves do arquivo .env ----------
+// Só as chaves com valor entram; vazio = a CLI usa o login da assinatura.
+export function lerEnv(texto) {
+  const env = {};
+  for (const linha of String(texto ?? '').split(/\r?\n/)) {
+    const m = linha.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+    if (!m || linha.trim().startsWith('#')) continue;
+    const valor = m[2].replace(/^(['"])(.*)\1$/, '$2');
+    if (valor) env[m[1]] = valor;
   }
+  return env;
+}
+
+// ---------- R16: cada IA usa a sua chave de API; sem chave, a CLI logada ----------
+export const CHAVE_DO_PROVEDOR = Object.freeze({ claude: 'ANTHROPIC_API_KEY', gemini: 'GEMINI_API_KEY', codex: 'OPENAI_API_KEY' });
+
+export function modoDoProvedor(provedor, chaves, clis) {
+  if (chaves.includes(CHAVE_DO_PROVEDOR[provedor])) return 'api';
+  if (clis[provedor]) return 'cli';
+  return null;
+}
+
+// ---------- R17: arquivos devolvidos pela API ----------
+// Blocos ```arquivo:caminho viram arquivos na pasta. Caminho absoluto ou com ".." é recusado.
+export function caminhoSeguro(caminho) {
+  const c = String(caminho).trim().replace(/\\/g, '/');
+  if (!c || c.startsWith('/') || /^[a-z]:/i.test(c)) return null;
+  const partes = c.split('/').filter((p) => p && p !== '.');
+  if (!partes.length || partes.includes('..')) return null;
+  return partes.join('/');
+}
+
+export function extrairArquivos(texto) {
+  const arquivos = [];
+  const bloco = /```arquivo:([^\n`]+)\n([\s\S]*?)\n?```/g;
+  let m;
+  while ((m = bloco.exec(String(texto)))) {
+    const caminho = caminhoSeguro(m[1]);
+    if (caminho) arquivos.push({ caminho, conteudo: m[2].endsWith('\n') ? m[2] : m[2] + '\n' });
+  }
+  return arquivos;
 }

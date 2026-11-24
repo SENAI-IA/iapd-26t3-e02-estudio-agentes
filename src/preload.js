@@ -6,4 +6,7 @@ contextBridge.exposeInMainWorld('estudio', {
   executarAgente: (dados) => ipcRenderer.invoke('executar-agente', dados),
   executarComando: (dados) => ipcRenderer.invoke('executar-comando', dados),
   escolherPasta: () => ipcRenderer.invoke('escolher-pasta'),
+  pastaPadrao: () => ipcRenderer.invoke('pasta-padrao'),
+  arquivosAlterados: (dados) => ipcRenderer.invoke('arquivos-alterados', dados),
+  abrir: (dados) => ipcRenderer.invoke('abrir', dados),
 });
