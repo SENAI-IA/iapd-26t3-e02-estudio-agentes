@@ -20,5 +20,6 @@ Origem: texto do post (Fernando Nogueira, LinkedIn) e o print do slide da ativid
 | R13 | Só quem executa (não coordenador, pesquisa ou revisão) escreve na pasta do projeto. | agente → `true/false` | post |
 | R14 | No fim da rodada, lista os arquivos alterados desde o início, ignorando `node_modules`, `.git`, `dist`… | arquivos → caminhos | post |
 | R15 | Lê o `.env`: ignora comentários e chaves vazias, aceita aspas e `export`. | texto → objeto | — |
-| R16 | Chave no `.env` → API; sem chave e com CLI → CLI; nenhum → sem acesso. | provedor → `api/cli/null` | pedido do time |
+| R16 | (modo gratuito desligado) Chave no `.env` → API; sem chave e com CLI → CLI; nenhum → sem acesso. | provedor → `api/cli/null` | pedido do time |
 | R17 | Pela API, blocos ```` ```arquivo:caminho ```` viram arquivos; caminho absoluto ou com `..` é recusado. | texto → arquivos | — |
+| R18 | `MODO_GRATUITO=true` (ou sim, 1, on) no `.env` manda **todos** os agentes para o Gemini grátis com a `GEMINI_API_KEY`; chaves pagas e CLIs são ignoradas. Sem a chave do Gemini, nenhum agente roda. | `.env` → `gratis/null` | pedido do time |

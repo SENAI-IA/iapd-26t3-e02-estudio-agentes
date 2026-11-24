@@ -88,10 +88,19 @@ function desenharPalco() {
   const usados = [...new Set(agentes.map((a) => a.provedor))];
   const faltando = usados.filter((p) => !provedores.modos[p]);
   const ROTULO = { api: 'API', cli: 'CLI' };
-  $('modo').textContent = !ponte ? 'abra pelo app (npm start)'
-    : usados.map((p) => `${p}: ${ROTULO[provedores.modos[p]] ?? 'sem acesso'}`).join(' · ');
-  $('modo').title = 'API = chave no .env · CLI = login da assinatura na linha de comando';
+  if (!ponte) {
+    $('modo').textContent = 'abra pelo app (npm start)';
+  } else if (provedores.gratuito) {
+    $('modo').textContent = faltando.length
+      ? 'modo gratuito ligado · falta GEMINI_API_KEY no .env'
+      : `modo gratuito · todos os agentes no ${provedores.modeloGratuito}`;
+    $('modo').title = 'MODO_GRATUITO=true no .env: todos usam o Gemini grátis; chaves pagas e CLIs são ignoradas';
+  } else {
+    $('modo').textContent = usados.map((p) => `${p}: ${ROTULO[provedores.modos[p]] ?? 'sem acesso'}`).join(' · ');
+    $('modo').title = 'API = chave no .env · CLI = login da assinatura na linha de comando';
+  }
   $('modo').classList.toggle('alerta', !ponte || faltando.length > 0);
+  $('modo').classList.toggle('gratis', Boolean(ponte && provedores.gratuito && !faltando.length));
   $('nome-projeto').textContent = pasta ? pasta.split(/[\\/]/).pop() : 'estudio-projetos (padrão)';
   $('btn-projeto').title = `${pasta || pastaPadrao}\nClique para escolher outra pasta`;
 }
@@ -147,7 +156,7 @@ function desenharMensagens() {
     }
     const a = m.autor === 'sistema' ? { nome: 'Estúdio', cor: '#777' } : ag(m.autor);
     return `<div class="msg ${m.erro ? 'falhou' : ''}" style="--cor:${a.cor}"><span class="avatar"></span><div>
-      <div class="cab">${esc(a.nome)}<small>${hora(m.em)}</small>${m.erro ? '<span class="selo">falhou</span>' : ''}</div>
+      <div class="cab">${esc(a.nome)}<small>${hora(m.em)}</small>${m.erro ? '<span class="selo">falhou</span>' : ''}${m.gratis && !m.erro ? `<span class="selo gratis" title="${esc(m.modelo ?? '')}">Gemini grátis</span>` : ''}</div>
       <div class="corpo">${formatar(m.texto)}</div>
       ${m.time ? `<div class="etiquetas">${m.time.map((id) => `<span style="--cor:${ag(id).cor}">${esc(ag(id).nome)}</span>`).join('')}</div>` : ''}
       ${desenharComandos(m.texto)}</div></div>`;
@@ -197,7 +206,7 @@ async function executar(agente, pedido, anteriores) {
   const texto = erro
     ? `${agente.provedor} falhou: ${(r.erro || r.saida || 'sem resposta').trim().split('\n').slice(-3).join('\n')}`
     : r.saida;
-  postar({ autor: agente.id, texto, erro });
+  postar({ autor: agente.id, texto, erro, gratis: r.modo === 'gratis', modelo: r.modelo });
   falar(agente.id, texto.split('\n')[0].slice(0, 90));
   mudarEstado(agente.id, 'concluido');
   return { nome: agente.nome, papel: agente.papel, texto };

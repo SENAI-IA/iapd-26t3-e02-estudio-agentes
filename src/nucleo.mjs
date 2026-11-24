@@ -171,7 +171,7 @@ export function montarPrompt(agente, pedido, anteriores = [], { modo = 'cli' } =
     ? '\n\nO que o time já entregou:\n' + anteriores.map((r) => `--- ${r.nome} (${r.papel}) ---\n${r.texto}`).join('\n\n')
     : '';
   const escreve = podeEscrever(agente);
-  const pasta = modo === 'api'
+  const pasta = modo === 'api' || modo === 'gratis'
     ? (escreve
       ? 'Para criar ou editar arquivos, devolva cada arquivo COMPLETO num bloco que começa com ```arquivo:caminho/relativo '
         + '(ex.: ```arquivo:index.html) e termina com ```. O Estúdio grava esses blocos na pasta do projeto.'
@@ -271,10 +271,18 @@ export function lerEnv(texto) {
 // ---------- R16: cada IA usa a sua chave de API; sem chave, a CLI logada ----------
 export const CHAVE_DO_PROVEDOR = Object.freeze({ claude: 'ANTHROPIC_API_KEY', gemini: 'GEMINI_API_KEY', codex: 'OPENAI_API_KEY' });
 
-export function modoDoProvedor(provedor, chaves, clis) {
+// No modo gratuito (R18) todos os agentes vão para o Gemini grátis e nada pago é usado.
+export function modoDoProvedor(provedor, chaves, clis, gratuito = false) {
+  if (gratuito) return chaves.includes(CHAVE_DO_PROVEDOR.gemini) ? 'gratis' : null;
   if (chaves.includes(CHAVE_DO_PROVEDOR[provedor])) return 'api';
   if (clis[provedor]) return 'cli';
   return null;
+}
+
+// ---------- R18: chave que liga o modo gratuito ----------
+// MODO_GRATUITO=true (ou sim, 1, on) no .env. Qualquer outro valor, ou ausente, deixa desligado.
+export function modoGratuitoLigado(env) {
+  return ['true', 'sim', '1', 'on', 'yes'].includes(String(env?.MODO_GRATUITO ?? '').trim().toLowerCase());
 }
 
 // ---------- R17: arquivos devolvidos pela API ----------
