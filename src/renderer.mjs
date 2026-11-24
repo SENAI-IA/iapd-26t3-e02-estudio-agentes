@@ -12,14 +12,14 @@ const salvo = (chave, padrao) => { try { return JSON.parse(localStorage.getItem(
 let agentes = salvo('agentes', n.TIME_PADRAO);
 let conversas = salvo('conversas', []);
 let atual = conversas[0] ?? n.novaConversa();
-let pasta = salvo('pasta', null);
-let modo = salvo('modo', 'auto'); // auto: IA real quando a CLI existe · demo: sempre simulado
+let pasta = salvo('pasta', null); // null = pasta padrão (~/estudio-projetos)
+let pastaPadrao = '';
 
 // ---------- estado da tela ----------
 let estados = Object.fromEntries(agentes.map((a) => [a.id, 'disponivel']));
 let destino = 'time';
 let ocupado = false;
-let provedores = {};
+let provedores = { modos: {}, chaves: [] };
 const baloes = new Map();
 const saidas = new Map(); // comando executado -> saída
 
@@ -28,7 +28,6 @@ function persistir() {
   localStorage.setItem('conversas', JSON.stringify(conversas));
   localStorage.setItem('agentes', JSON.stringify(agentes));
   localStorage.setItem('pasta', JSON.stringify(pasta));
-  localStorage.setItem('modo', JSON.stringify(modo));
 }
 
 // ---------- mascotes (SVG) ----------
@@ -86,10 +85,15 @@ function desenharPalco() {
       <span class="estado">${ROTULO_ESTADO[estados[a.id] ?? 'disponivel']}</span>
     </button>`).join('');
   $('status').textContent = n.resumoStatus(agentes, estados);
-  const real = Object.entries(provedores).filter(([, ok]) => ok).map(([p]) => p);
-  $('modo').textContent = modo === 'demo' || !real.length ? 'modo demonstração' : `IA real: ${real.join(', ')}`;
-  $('nome-projeto').textContent = pasta ? pasta.split(/[\\/]/).pop() : 'Sem projeto';
-  $('btn-projeto').title = pasta ?? 'Escolher pasta do projeto';
+  const usados = [...new Set(agentes.map((a) => a.provedor))];
+  const faltando = usados.filter((p) => !provedores.modos[p]);
+  const ROTULO = { api: 'API', cli: 'CLI' };
+  $('modo').textContent = !ponte ? 'abra pelo app (npm start)'
+    : usados.map((p) => `${p}: ${ROTULO[provedores.modos[p]] ?? 'sem acesso'}`).join(' · ');
+  $('modo').title = 'API = chave no .env · CLI = login da assinatura na linha de comando';
+  $('modo').classList.toggle('alerta', !ponte || faltando.length > 0);
+  $('nome-projeto').textContent = pasta ? pasta.split(/[\\/]/).pop() : 'estudio-projetos (padrão)';
+  $('btn-projeto').title = `${pasta || pastaPadrao}\nClique para escolher outra pasta`;
 }
 
 function desenharChips() {
@@ -103,7 +107,12 @@ function desenharChips() {
 }
 
 function formatar(texto) {
-  return esc(texto).replace(/\n*```[a-z]*\n?([\s\S]*?)\n?```\n*/g, (_m, c) => `<pre>${c}</pre>`);
+  return esc(texto)
+    .replace(/\n*```arquivo:([^\n`]+)\n([\s\S]*?)\n?```\n*/g,
+      (_m, c, conteudo) => `<details class="arquivo"><summary>📄 ${c}</summary><pre>${conteudo}</pre></details>`)
+    .replace(/\n*```[a-z]*\n?([\s\S]*?)\n?```\n*/g, (_m, c) => `<pre>${c}</pre>`)
+    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
 }
 
 function desenharComandos(texto) {
@@ -131,9 +140,14 @@ function desenharMensagens() {
           <div class="barra"><span style="width:${p.confianca}%"></span></div><p>${esc(p.fala)}</p></div>`;
       }).join('')}</div>`;
     }
-    const a = ag(m.autor);
-    return `<div class="msg" style="--cor:${a.cor}"><span class="avatar"></span><div>
-      <div class="cab">${esc(a.nome)}<small>${hora(m.em)}</small>${m.simulado ? '<span class="simulado">simulado</span>' : ''}</div>
+    if (m.tipo === 'arquivos') {
+      return `<div class="rodada arquivos"><h3>Arquivos criados ou alterados</h3>${m.arquivos.length
+        ? m.arquivos.map((f) => `<button data-abrir="${esc(f)}">📄 ${esc(f)}</button>`).join('')
+        : '<p>Nenhum arquivo mudou na pasta do projeto.</p>'}<button data-abrir="" class="pasta">📁 Abrir a pasta</button></div>`;
+    }
+    const a = m.autor === 'sistema' ? { nome: 'Estúdio', cor: '#777' } : ag(m.autor);
+    return `<div class="msg ${m.erro ? 'falhou' : ''}" style="--cor:${a.cor}"><span class="avatar"></span><div>
+      <div class="cab">${esc(a.nome)}<small>${hora(m.em)}</small>${m.erro ? '<span class="selo">falhou</span>' : ''}</div>
       <div class="corpo">${formatar(m.texto)}</div>
       ${m.time ? `<div class="etiquetas">${m.time.map((id) => `<span style="--cor:${ag(id).cor}">${esc(ag(id).nome)}</span>`).join('')}</div>` : ''}
       ${desenharComandos(m.texto)}</div></div>`;
@@ -176,18 +190,14 @@ function postar(msg) {
 // ---------- execução ----------
 async function executar(agente, pedido, anteriores) {
   mudarEstado(agente.id, 'trabalhando');
-  let texto; let simulado = false;
-  const prompt = n.montarPrompt(agente, pedido, anteriores);
-  const r = modo === 'auto' && ponte ? await ponte.executarAgente({ provedor: agente.provedor, prompt, pasta }) : { simulado: true };
-  if (r.simulado || !r.ok || !r.saida) {
-    // sem CLI, sem login ou com erro: a apresentação continua com a resposta simulada
-    if (r.simulado) await esperar(1200 + Math.random() * 1500);
-    const motivo = r.simulado ? '' : `\n\n(${agente.provedor} falhou: ${(r.erro || r.saida || 'sem resposta').split('\n')[0]})`;
-    texto = n.respostaSimulada(agente, pedido) + motivo; simulado = true;
-  } else {
-    texto = r.saida;
-  }
-  postar({ autor: agente.id, texto, simulado });
+  const modo = provedores.modos[agente.provedor] ?? 'cli';
+  const prompt = n.montarPrompt(agente, pedido, anteriores, { modo });
+  const r = await ponte.executarAgente({ provedor: agente.provedor, prompt, pasta, escrita: n.podeEscrever(agente) });
+  const erro = !r.ok || !r.saida;
+  const texto = erro
+    ? `${agente.provedor} falhou: ${(r.erro || r.saida || 'sem resposta').trim().split('\n').slice(-3).join('\n')}`
+    : r.saida;
+  postar({ autor: agente.id, texto, erro });
   falar(agente.id, texto.split('\n')[0].slice(0, 90));
   mudarEstado(agente.id, 'concluido');
   return { nome: agente.nome, papel: agente.papel, texto };
@@ -196,7 +206,11 @@ async function executar(agente, pedido, anteriores) {
 async function enviar(pedido) {
   ocupado = true;
   postar({ autor: 'voce', texto: pedido });
+  const inicio = Date.now() - 1000;
   try {
+    if (!ponte) throw new Error('Os agentes só rodam no app desktop (npm start).');
+    provedores = await ponte.provedores(); // o .env pode ter mudado
+    desenharPalco();
     const alvo = agentes.find((a) => a.id === destino);
     if (alvo) {
       await executar(alvo, pedido, []);
@@ -219,8 +233,10 @@ async function enviar(pedido) {
         anteriores.push(...resultados);
       }
     }
+    const arquivos = await ponte.arquivosAlterados({ pasta, desde: inicio });
+    postar({ autor: 'sistema', tipo: 'arquivos', arquivos });
   } catch (e) {
-    postar({ autor: 'sistema', texto: `Erro: ${e.message}` });
+    postar({ autor: 'sistema', texto: `Erro: ${e.message}`, erro: true });
   } finally {
     ocupado = false;
     await esperar(2500);
@@ -264,6 +280,12 @@ $('palco').addEventListener('contextmenu', (ev) => {
 });
 
 $('mensagens').addEventListener('click', async (ev) => {
+  const abrir = ev.target.closest('[data-abrir]');
+  if (abrir && ponte) {
+    const falha = await ponte.abrir({ pasta, caminho: abrir.dataset.abrir });
+    if (falha) postar({ autor: 'sistema', texto: `Não abriu: ${falha}`, erro: true });
+    return;
+  }
   const b = ev.target.closest('[data-cmd]');
   if (!b) return;
   const comando = b.dataset.cmd;
@@ -280,7 +302,6 @@ $('btn-projeto').addEventListener('click', async () => {
   const p = await ponte.escolherPasta();
   if (p) { pasta = p; persistir(); desenharPalco(); }
 });
-$('btn-modo').addEventListener('click', () => { modo = modo === 'auto' ? 'demo' : 'auto'; persistir(); desenharPalco(); });
 
 $('btn-nova-conversa').addEventListener('click', () => {
   if (ocupado) return;
@@ -315,6 +336,9 @@ $('form-agente').addEventListener('submit', (ev) => {
 });
 
 // ---------- início ----------
-provedores = ponte ? await ponte.provedores() : {};
+if (ponte) {
+  provedores = await ponte.provedores();
+  pastaPadrao = await ponte.pastaPadrao();
+}
 desenhar();
 $('entrada').focus();

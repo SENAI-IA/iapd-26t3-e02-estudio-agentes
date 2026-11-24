@@ -12,8 +12,12 @@ Origem: texto do post (Fernando Nogueira, LinkedIn) e o print do slide da ativid
 | R6 | Fala do Maestro: "Fica com Chevron e Pixel. Revisor, acompanha no final." | etapas → texto | print |
 | R7 | Comandos sensíveis pedem aprovação na tela. | comando → `true/false` | post |
 | R8 | Comandos sugeridos são lidos dos blocos ```bash da resposta. | texto → `[{comando, sensivel}]` | — |
-| R9 | Cada agente recebe papel, personalidade, pedido e o que as etapas anteriores entregaram. | → prompt | post |
+| R9 | Cada agente recebe papel, personalidade, pedido, o que as etapas anteriores entregaram e como lidar com arquivos (CLI ou API). | → prompt | post |
 | R10 | Estados: disponível, pensando, trabalhando, concluído; topo mostra "N de M trabalhando". | | print |
 | R11 | Criar agente pelo painel (nome único, papel obrigatório, provedor/visual/cor); o coordenador não pode ser removido. | | post |
 | R12 | Conversas separadas; o título é a primeira pergunta (até 60 caracteres). | | post |
-| R13 | Sem IA disponível, cada agente tem uma resposta simulada. | | — |
+| R13 | Só quem executa (não coordenador, pesquisa ou revisão) escreve na pasta do projeto. | agente → `true/false` | post |
+| R14 | No fim da rodada, lista os arquivos alterados desde o início, ignorando `node_modules`, `.git`, `dist`… | arquivos → caminhos | post |
+| R15 | Lê o `.env`: ignora comentários e chaves vazias, aceita aspas e `export`. | texto → objeto | — |
+| R16 | Chave no `.env` → API; sem chave e com CLI → CLI; nenhum → sem acesso. | provedor → `api/cli/null` | pedido do time |
+| R17 | Pela API, blocos ```` ```arquivo:caminho ```` viram arquivos; caminho absoluto ou com `..` é recusado. | texto → arquivos | — |

@@ -1,12 +1,16 @@
-// Processo principal: janela, escolha da pasta do projeto e chamadas às IAs pelas CLIs
-// de assinatura (claude / gemini / codex), sem cobrança por uso de API.
-const { app, BrowserWindow, Menu, dialog, ipcMain } = require('electron');
+// Processo principal: janela, pasta do projeto, chaves do .env e chamadas às IAs.
+// Cada IA usa a sua chave de API do .env (SDK oficial); sem chave, usa a CLI logada na assinatura.
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
 const { spawn, execFileSync } = require('node:child_process');
+const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
+const nucleo = import('./nucleo.mjs');
 let janela;
-const TEMPO_MAXIMO_MS = 180_000;
+const TEMPO_MAXIMO_MS = 300_000;
+const PASTA_PADRAO = path.join(os.homedir(), 'estudio-projetos');
+const ARQUIVO_ENV = path.join(app.getAppPath(), '.env');
 
 function criarJanela() {
   janela = new BrowserWindow({
@@ -26,28 +30,104 @@ Menu.setApplicationMenu(Menu.buildFromTemplate([
 app.whenReady().then(criarJanela);
 app.on('window-all-closed', () => app.quit());
 
+// ---------- .env ----------
+// Lido a cada chamada: trocar uma chave não exige reiniciar o app.
+async function ambiente() {
+  const { lerEnv } = await nucleo;
+  let doArquivo = {};
+  try { doArquivo = lerEnv(fs.readFileSync(ARQUIVO_ENV, 'utf8')); } catch { /* sem .env: usa os logins */ }
+  // o codex exec aceita a chave como CODEX_API_KEY
+  if (doArquivo.OPENAI_API_KEY && !doArquivo.CODEX_API_KEY) doArquivo.CODEX_API_KEY = doArquivo.OPENAI_API_KEY;
+  return { env: { ...process.env, ...doArquivo }, chaves: Object.keys(doArquivo) };
+}
+
 // ---------- provedores ----------
 function existe(cmd) {
   try { execFileSync('sh', ['-c', `command -v ${cmd}`], { stdio: 'ignore' }); return true; } catch { return false; }
 }
 
-// Cada provedor vira uma linha de comando. O claude só pode ler a pasta (Read/Grep/Glob):
-// em modo -p, qualquer outra ferramenta é negada automaticamente.
+// Quem executa escreve na pasta do projeto; pesquisa e revisão só leem.
 const COMANDOS = {
-  claude: (prompt) => ['claude', ['-p', prompt, '--output-format', 'text', '--allowedTools', 'Read,Grep,Glob']],
+  claude: (prompt, escrita) => ['claude', ['-p', prompt, '--output-format', 'text',
+    '--allowedTools', escrita ? 'Read,Grep,Glob,Edit,MultiEdit,Write' : 'Read,Grep,Glob',
+    ...(escrita ? ['--permission-mode', 'acceptEdits'] : [])]],
   // --skip-trust: em modo -p o gemini recusa pasta "não confiável"; a pasta é a que a pessoa escolheu.
-  // --approval-mode plan: só leitura, como o claude.
-  gemini: (prompt) => ['gemini', ['--skip-trust', '--approval-mode', 'plan', '-o', 'text', '-p', prompt]],
+  gemini: (prompt, escrita) => ['gemini', ['--skip-trust', '--approval-mode', escrita ? 'auto_edit' : 'plan', '-o', 'text', '-p', prompt]],
   // --skip-git-repo-check: sem ele o codex recusa pastas fora de um repositório git confiável.
-  codex: (prompt) => ['codex', ['exec', '--sandbox', 'read-only', '--skip-git-repo-check', prompt]],
+  codex: (prompt, escrita) => ['codex', ['exec', '--sandbox', escrita ? 'workspace-write' : 'read-only', '--skip-git-repo-check', prompt]],
 };
 
-ipcMain.handle('provedores', () =>
-  Object.fromEntries(Object.keys(COMANDOS).map((p) => [p, existe(p)])));
+const COMO_INSTALAR = {
+  claude: 'npm install -g @anthropic-ai/claude-code',
+  gemini: 'npm install -g @google/gemini-cli',
+  codex: 'npm install -g @openai/codex',
+};
 
-function rodar(cmd, args, cwd, tempo = TEMPO_MAXIMO_MS) {
+// ---------- APIs (SDKs oficiais) ----------
+const MODELO_PADRAO = { claude: 'claude-opus-5-5', gemini: 'gemini-3.8-flash', codex: 'gpt-5.5' };
+const VAR_MODELO = { claude: 'ANTHROPIC_MODEL', gemini: 'GEMINI_MODEL', codex: 'OPENAI_MODEL' };
+
+const API = {
+  async claude(prompt, chave, modelo) {
+    const Anthropic = (await import('@anthropic-ai/sdk')).default;
+    const cliente = new Anthropic({ apiKey: chave });
+    // streaming: a resposta pode trazer arquivos inteiros; fallbacks: se o modelo recusar, outro assume
+    const msg = await cliente.beta.messages.stream({
+      model: modelo, max_tokens: 64000,
+      betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
+      messages: [{ role: 'user', content: prompt }],
+    }).finalMessage();
+    if (msg.stop_reason === 'refusal') throw new Error('O modelo recusou o pedido.');
+    return msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+  },
+  async gemini(prompt, chave, modelo) {
+    const { GoogleGenAI } = await import('@google/genai');
+    const r = await new GoogleGenAI({ apiKey: chave }).models.generateContent({ model: modelo, contents: prompt });
+    return r.text ?? '';
+  },
+  async codex(prompt, chave, modelo) {
+    const OpenAI = (await import('openai')).default;
+    const r = await new OpenAI({ apiKey: chave }).responses.create({ model: modelo, input: prompt });
+    return r.output_text ?? '';
+  },
+};
+
+async function chamarApi(provedor, prompt, env) {
+  const { CHAVE_DO_PROVEDOR } = await nucleo;
+  const modelo = env[VAR_MODELO[provedor]] || MODELO_PADRAO[provedor];
+  try {
+    const saida = (await API[provedor](prompt, env[CHAVE_DO_PROVEDOR[provedor]], modelo)).trim();
+    return { ok: Boolean(saida), saida, erro: saida ? '' : 'resposta vazia', modelo };
+  } catch (e) {
+    return { ok: false, saida: '', erro: `${modelo}: ${e.message}` };
+  }
+}
+
+// Grava na pasta os blocos ```arquivo:caminho devolvidos pela API.
+async function gravarArquivos(texto, raiz) {
+  const { extrairArquivos } = await nucleo;
+  const gravados = [];
+  for (const { caminho, conteudo } of extrairArquivos(texto)) {
+    const destino = path.join(raiz, caminho);
+    await fs.promises.mkdir(path.dirname(destino), { recursive: true });
+    await fs.promises.writeFile(destino, conteudo, 'utf8');
+    gravados.push(caminho);
+  }
+  return gravados;
+}
+
+async function modos() {
+  const { modoDoProvedor } = await nucleo;
+  const { chaves } = await ambiente();
+  const clis = Object.fromEntries(Object.keys(COMANDOS).map((p) => [p, existe(p)]));
+  return { chaves, modos: Object.fromEntries(Object.keys(COMANDOS).map((p) => [p, modoDoProvedor(p, chaves, clis)])) };
+}
+
+ipcMain.handle('provedores', () => modos());
+
+function rodar(cmd, args, cwd, env, tempo = TEMPO_MAXIMO_MS) {
   return new Promise((resolve) => {
-    const filho = spawn(cmd, args, { cwd, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const filho = spawn(cmd, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
     let saida = ''; let erro = '';
     const timer = setTimeout(() => { filho.kill('SIGTERM'); erro += '\n(tempo esgotado)'; }, tempo);
     filho.stdout.on('data', (d) => { saida += d; });
@@ -57,20 +137,75 @@ function rodar(cmd, args, cwd, tempo = TEMPO_MAXIMO_MS) {
   });
 }
 
-ipcMain.handle('executar-agente', async (_ev, { provedor, prompt, pasta }) => {
-  const montar = COMANDOS[provedor];
-  if (!montar || !existe(provedor)) return { simulado: true };
-  const [cmd, args] = montar(String(prompt));
-  return rodar(cmd, args, pasta || os.homedir());
+function pastaDoProjeto(pasta) {
+  const p = pasta || PASTA_PADRAO;
+  fs.mkdirSync(p, { recursive: true });
+  return p;
+}
+
+ipcMain.handle('executar-agente', async (_ev, { provedor, prompt, pasta, escrita }) => {
+  if (!COMANDOS[provedor]) return { ok: false, erro: `Provedor desconhecido: ${provedor}` };
+  const { CHAVE_DO_PROVEDOR } = await nucleo;
+  const modo = (await modos()).modos[provedor];
+  const raiz = pastaDoProjeto(pasta);
+  const { env } = await ambiente();
+  if (modo === 'api') {
+    const r = await chamarApi(provedor, String(prompt), env);
+    if (r.ok && escrita) r.gravados = await gravarArquivos(r.saida, raiz);
+    return { ...r, modo };
+  }
+  if (modo === 'cli') {
+    const [cmd, args] = COMANDOS[provedor](String(prompt), Boolean(escrita));
+    return { ...(await rodar(cmd, args, raiz, env)), modo };
+  }
+  return { ok: false, erro: `Sem acesso ao ${provedor}: coloque ${CHAVE_DO_PROVEDOR[provedor]} no .env `
+    + `ou instale e faça login na CLI (${COMO_INSTALAR[provedor]}).` };
 });
 
 // Só roda depois que a pessoa clicou em Executar/Aprovar na tela.
 ipcMain.handle('executar-comando', async (_ev, { comando, pasta }) =>
-  rodar('bash', ['-lc', String(comando)], pasta || os.homedir(), 60_000));
+  rodar('bash', ['-lc', String(comando)], pastaDoProjeto(pasta), (await ambiente()).env, 60_000));
+
+ipcMain.handle('pasta-padrao', () => PASTA_PADRAO);
 
 ipcMain.handle('escolher-pasta', async () => {
   const { canceled, filePaths } = await dialog.showOpenDialog(janela, {
-    title: 'Pasta do projeto', properties: ['openDirectory'],
+    title: 'Pasta do projeto', properties: ['openDirectory', 'createDirectory'],
   });
   return canceled || !filePaths.length ? null : filePaths[0];
+});
+
+// ---------- arquivos alterados na rodada ----------
+async function listarArquivos(raiz, ignorar, profundidade = 5) {
+  const lista = [];
+  async function andar(dir, nivel) {
+    if (nivel > profundidade || lista.length > 5000) return;
+    let itens = [];
+    try { itens = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { return; }
+    for (const it of itens) {
+      if (ignorar(it.name)) continue;
+      const completo = path.join(dir, it.name);
+      if (it.isDirectory()) await andar(completo, nivel + 1);
+      else if (it.isFile()) {
+        const { mtimeMs } = await fs.promises.stat(completo);
+        lista.push({ caminho: path.relative(raiz, completo), mtimeMs });
+      }
+    }
+  }
+  await andar(raiz, 0);
+  return lista;
+}
+
+ipcMain.handle('arquivos-alterados', async (_ev, { pasta, desde }) => {
+  const { ignorarCaminho, arquivosAlterados } = await nucleo;
+  const raiz = pastaDoProjeto(pasta);
+  return arquivosAlterados(await listarArquivos(raiz, ignorarCaminho), Number(desde)).slice(0, 50);
+});
+
+// Abre um arquivo (ou a pasta, com caminho vazio) no programa padrão do sistema.
+ipcMain.handle('abrir', async (_ev, { pasta, caminho }) => {
+  const raiz = path.resolve(pastaDoProjeto(pasta));
+  const alvo = path.resolve(raiz, String(caminho || '.'));
+  if (alvo !== raiz && !alvo.startsWith(raiz + path.sep)) return 'Fora da pasta do projeto';
+  return shell.openPath(alvo);
 });

@@ -101,6 +101,39 @@ test('R12 conversa ganha o título da primeira pergunta', () => {
   assert.equal(n.adicionarMensagem(n.novaConversa(), { autor: 'voce', texto: 'x'.repeat(80) }).titulo.length, 60);
 });
 
-test('R13 resposta simulada existe para todo agente', () => {
-  for (const a of T) assert.ok(n.respostaSimulada(a, PEDIDO).length > 10);
+test('R9 prompt muda conforme o modo e quem escreve', () => {
+  const [, pixel, , , revisor] = T;
+  assert.match(n.montarPrompt(pixel, PEDIDO), /direto na pasta do projeto/);
+  assert.match(n.montarPrompt(revisor, PEDIDO), /só pode ler/);
+  assert.match(n.montarPrompt(pixel, PEDIDO, [], { modo: 'api' }), /```arquivo:caminho\/relativo/);
+  assert.match(n.montarPrompt(revisor, PEDIDO, [], { modo: 'api' }), /não acessa a pasta/);
+});
+
+test('R13 só quem executa escreve na pasta', () => {
+  assert.deepEqual(T.filter(n.podeEscrever).map((a) => a.id), ['pixel', 'chevron']);
+});
+
+test('R14 arquivos alterados desde o início da rodada, sem pastas pesadas', () => {
+  assert.ok(n.ignorarCaminho('node_modules') && n.ignorarCaminho('.git'));
+  assert.equal(n.ignorarCaminho('src'), false);
+  const lista = [{ caminho: 'b.html', mtimeMs: 200 }, { caminho: 'a.css', mtimeMs: 150 }, { caminho: 'velho.txt', mtimeMs: 10 }];
+  assert.deepEqual(n.arquivosAlterados(lista, 100), ['a.css', 'b.html']);
+});
+
+test('R15 lê o .env: ignora comentário e chave vazia, tira aspas', () => {
+  const env = n.lerEnv('# comentário\nANTHROPIC_API_KEY=\nGEMINI_API_KEY="abc"\nexport OPENAI_API_KEY=xyz\nlixo\n');
+  assert.deepEqual(env, { GEMINI_API_KEY: 'abc', OPENAI_API_KEY: 'xyz' });
+});
+
+test('R16 chave no .env vence a CLI; sem as duas, sem acesso', () => {
+  assert.equal(n.modoDoProvedor('claude', ['ANTHROPIC_API_KEY'], { claude: true }), 'api');
+  assert.equal(n.modoDoProvedor('claude', [], { claude: true }), 'cli');
+  assert.equal(n.modoDoProvedor('codex', ['GEMINI_API_KEY'], {}), null);
+});
+
+test('R17 blocos de arquivo da API, com caminho seguro', () => {
+  const t = 'Pronto:\n```arquivo:site/index.html\n<h1>Pudim</h1>\n```\n```arquivo:../fora.txt\nx\n```\n```arquivo:/etc/passwd\nx\n```';
+  assert.deepEqual(n.extrairArquivos(t), [{ caminho: 'site/index.html', conteudo: '<h1>Pudim</h1>\n' }]);
+  assert.equal(n.caminhoSeguro('./a/./b.css'), 'a/b.css');
+  assert.equal(n.caminhoSeguro('C:\\x'), null);
 });
