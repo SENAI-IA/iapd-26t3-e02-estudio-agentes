@@ -152,3 +152,19 @@ test('R17 blocos de arquivo da API, com caminho seguro', () => {
   assert.equal(n.caminhoSeguro('./a/./b.css'), 'a/b.css');
   assert.equal(n.caminhoSeguro('C:\\x'), null);
 });
+
+test('R18 modo gratuito: liga pela chave do .env e manda todos para o Gemini grátis', () => {
+  assert.ok(n.modoGratuitoLigado({ MODO_GRATUITO: 'true' }));
+  assert.ok(n.modoGratuitoLigado({ MODO_GRATUITO: ' Sim ' }));
+  assert.equal(n.modoGratuitoLigado({ MODO_GRATUITO: 'false' }), false);
+  assert.equal(n.modoGratuitoLigado({}), false);
+  const chaves = ['GEMINI_API_KEY', 'ANTHROPIC_API_KEY'];
+  for (const p of ['claude', 'gemini', 'codex']) assert.equal(n.modoDoProvedor(p, chaves, { claude: true }, true), 'gratis');
+  assert.equal(n.modoDoProvedor('claude', ['ANTHROPIC_API_KEY'], { claude: true }, true), null);
+  assert.equal(n.modoDoProvedor('claude', chaves, {}, false), 'api');
+});
+
+test('R18 no modo gratuito o prompt pede blocos de arquivo, como na API', () => {
+  assert.match(n.montarPrompt(T[1], 'crie uma página', [], { modo: 'gratis' }), /```arquivo:caminho\/relativo/);
+});
+

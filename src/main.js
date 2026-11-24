@@ -38,7 +38,7 @@ async function ambiente() {
   try { doArquivo = lerEnv(fs.readFileSync(ARQUIVO_ENV, 'utf8')); } catch { /* sem .env: usa os logins */ }
   // o codex exec aceita a chave como CODEX_API_KEY
   if (doArquivo.OPENAI_API_KEY && !doArquivo.CODEX_API_KEY) doArquivo.CODEX_API_KEY = doArquivo.OPENAI_API_KEY;
-  return { env: { ...process.env, ...doArquivo }, chaves: Object.keys(doArquivo) };
+  return { env: { ...process.env, ...doArquivo }, chaves: Object.keys(doArquivo), doArquivo };
 }
 
 // ---------- provedores ----------
@@ -65,6 +65,8 @@ const COMO_INSTALAR = {
 
 // ---------- APIs (SDKs oficiais) ----------
 const MODELO_PADRAO = { claude: 'claude-opus-5-5', gemini: 'gemini-3.8-flash', codex: 'gpt-5.5' };
+// Modo gratuito: Flash-Lite tem a maior cota grátis do Gemini (troque com GEMINI_MODELO_GRATUITO).
+const MODELO_GRATUITO = 'gemini-3.5-flash-lite';
 const VAR_MODELO = { claude: 'ANTHROPIC_MODEL', gemini: 'GEMINI_MODEL', codex: 'OPENAI_MODEL' };
 
 const API = {
@@ -92,14 +94,20 @@ const API = {
   },
 };
 
-async function chamarApi(provedor, prompt, env) {
+async function chamarApi(provedor, prompt, env, modeloForcado) {
   const { CHAVE_DO_PROVEDOR } = await nucleo;
-  const modelo = env[VAR_MODELO[provedor]] || MODELO_PADRAO[provedor];
+  const modelo = modeloForcado || env[VAR_MODELO[provedor]] || MODELO_PADRAO[provedor];
   try {
     const saida = (await API[provedor](prompt, env[CHAVE_DO_PROVEDOR[provedor]], modelo)).trim();
     return { ok: Boolean(saida), saida, erro: saida ? '' : 'resposta vazia', modelo };
   } catch (e) {
-    return { ok: false, saida: '', erro: `${modelo}: ${e.message}` };
+    const limite = (e.status ?? e.code) === 429 || /RESOURCE_EXHAUSTED|quota/i.test(String(e.message));
+    return {
+      ok: false, saida: '', modelo,
+      erro: limite
+        ? `${modelo}: limite de uso atingido (por minuto ou por dia). Espere um pouco ou tente amanhã — no modo gratuito o Google libera a cota de novo à meia-noite do Pacífico.`
+        : `${modelo}: ${e.message}`,
+    };
   }
 }
 
@@ -117,10 +125,15 @@ async function gravarArquivos(texto, raiz) {
 }
 
 async function modos() {
-  const { modoDoProvedor } = await nucleo;
-  const { chaves } = await ambiente();
-  const clis = Object.fromEntries(Object.keys(COMANDOS).map((p) => [p, existe(p)]));
-  return { chaves, modos: Object.fromEntries(Object.keys(COMANDOS).map((p) => [p, modoDoProvedor(p, chaves, clis)])) };
+  const { modoDoProvedor, modoGratuitoLigado } = await nucleo;
+  const { chaves, doArquivo, env } = await ambiente();
+  const gratuito = modoGratuitoLigado(doArquivo);
+  const clis = gratuito ? {} : Object.fromEntries(Object.keys(COMANDOS).map((p) => [p, existe(p)]));
+  return {
+    chaves, gratuito,
+    modeloGratuito: env.GEMINI_MODELO_GRATUITO || MODELO_GRATUITO,
+    modos: Object.fromEntries(Object.keys(COMANDOS).map((p) => [p, modoDoProvedor(p, chaves, clis, gratuito)])),
+  };
 }
 
 ipcMain.handle('provedores', () => modos());
@@ -146,9 +159,16 @@ function pastaDoProjeto(pasta) {
 ipcMain.handle('executar-agente', async (_ev, { provedor, prompt, pasta, escrita }) => {
   if (!COMANDOS[provedor]) return { ok: false, erro: `Provedor desconhecido: ${provedor}` };
   const { CHAVE_DO_PROVEDOR } = await nucleo;
-  const modo = (await modos()).modos[provedor];
+  const estado = await modos();
+  const modo = estado.modos[provedor];
   const raiz = pastaDoProjeto(pasta);
   const { env } = await ambiente();
+  if (modo === 'gratis') {
+    // todo agente vira Gemini grátis, com a chave GEMINI_API_KEY
+    const r = await chamarApi('gemini', String(prompt), env, estado.modeloGratuito);
+    if (r.ok && escrita) r.gravados = await gravarArquivos(r.saida, raiz);
+    return { ...r, modo };
+  }
   if (modo === 'api') {
     const r = await chamarApi(provedor, String(prompt), env);
     if (r.ok && escrita) r.gravados = await gravarArquivos(r.saida, raiz);
@@ -157,6 +177,10 @@ ipcMain.handle('executar-agente', async (_ev, { provedor, prompt, pasta, escrita
   if (modo === 'cli') {
     const [cmd, args] = COMANDOS[provedor](String(prompt), Boolean(escrita));
     return { ...(await rodar(cmd, args, raiz, env)), modo };
+  }
+  if (estado.gratuito) {
+    return { ok: false, erro: 'O modo gratuito está ligado (MODO_GRATUITO=true), mas falta a GEMINI_API_KEY no .env. '
+      + 'Crie uma chave grátis em https://aistudio.google.com/app/apikey (sem ativar faturamento).' };
   }
   return { ok: false, erro: `Sem acesso ao ${provedor}: coloque ${CHAVE_DO_PROVEDOR[provedor]} no .env `
     + `ou instale e faça login na CLI (${COMO_INSTALAR[provedor]}).` };

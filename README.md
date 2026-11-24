@@ -11,14 +11,45 @@ Precisa de Node.js 20+.
 ```bash
 npm install
 npm start      # abre o app (na primeira vez o Electron baixa o próprio executável, ~100 MB)
-npm test       # 21 testes das regras R1–R17
+npm test       # 23 testes das regras R1–R18
 ```
 
-Depois, dê a cada IA uma forma de acesso: chave de API ou CLI logada (próxima seção).
+Depois, dê a cada IA uma forma de acesso: chave de API ou CLI logada. Sem assinatura nem crédito,
+use o **modo gratuito**, que precisa só de uma chave grátis do Gemini.
+
+## Modo gratuito (sem assinatura)
+
+Uma chave no `.env` liga o modo gratuito: **todos os agentes passam a usar o Gemini grátis**
+(`gemini-3.5-flash-lite`). As chaves pagas e as CLIs são ignoradas, então nada é cobrado.
+
+1. Crie uma chave em https://aistudio.google.com/app/apikey **sem ativar faturamento** no projeto.
+   Com faturamento ativo, o Google cobra mesmo nesse modo.
+2. Configure o `.env`:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   Preencha `GEMINI_API_KEY=` e troque para `MODO_GRATUITO=true`.
+
+3. O topo do app mostra `modo gratuito · todos os agentes no gemini-3.5-flash-lite`, e cada
+   resposta ganha o selo **Gemini grátis**.
+
+Limites e cuidados:
+- O Flash-Lite tem a maior cota grátis, na casa de 15 pedidos por minuto e 500 por dia. O Google
+  pode mudar esses números; veja a sua cota no AI Studio.
+- Cada rodada do time faz de 3 a 4 pedidos.
+- Se a cota acabar, o agente avisa. Ela volta à meia-noite do Pacífico.
+- No plano grátis, o Google pode usar o texto enviado para melhorar os produtos dele: não mande
+  código ou dados sigilosos.
+- Por que só o Gemini: as APIs da Anthropic e da OpenAI não têm plano gratuito contínuo, apenas
+  créditos de teste.
+
+Para voltar ao normal, use `MODO_GRATUITO=false`.
 
 ## Como cada IA é acessada
 
-Para cada provedor, o app escolhe sozinho a cada pedido:
+Com o modo gratuito desligado, o app escolhe sozinho, a cada pedido e para cada provedor:
 
 1. **Chave de API no `.env`** → usa a API oficial pelo SDK (cobrança por uso).
 2. **Sem chave** → usa a CLI logada na sua assinatura (sem cobrança por uso).
@@ -75,7 +106,7 @@ Abra o app pelo terminal (`npm start`). Assim ele herda o `PATH` onde as CLIs fo
   Scout e Revisor nunca escrevem.
 - **Pela CLI:** a própria IA edita os arquivos. Pesquisa e revisão rodam em modo só leitura
   (`claude` só com Read/Grep/Glob, `gemini --approval-mode plan`, `codex --sandbox read-only`).
-- **Pela API:** a IA devolve cada arquivo num bloco ```` ```arquivo:caminho ```` e o Estúdio grava.
+- **Pela API (e no modo gratuito):** a IA devolve cada arquivo num bloco ```` ```arquivo:caminho ```` e o Estúdio grava.
   Caminhos absolutos ou com `..` são recusados. Nesse modo, Scout e Revisor não leem a pasta:
   trabalham com o que o time entregou na rodada.
 - No fim da rodada, o cartão **Arquivos criados ou alterados** abre cada arquivo ou a pasta.
@@ -102,8 +133,8 @@ Abra o app pelo terminal (`npm start`). Assim ele herda o `PATH` onde as CLIs fo
 
 | Arquivo | Papel |
 |---|---|
-| `REGRAS.md` | As regras R1–R17, com entrada, saída e origem. |
-| `.env.example` | Modelo do `.env` com as chaves e os modelos de cada IA. |
+| `REGRAS.md` | As regras R1–R18, com entrada, saída e origem. |
+| `.env.example` | Modelo do `.env`: modo gratuito, chaves e modelos de cada IA. |
 | `src/nucleo.mjs` | **Todas as regras.** Funções puras, sem DOM, Electron nem rede. |
 | `src/renderer.mjs` | Tela: mascotes em SVG, palco, rodada de propostas, chat. |
 | `src/main.js` | Janela, pasta do projeto, `.env`, chamadas por API (SDKs oficiais) ou CLI, gravação de arquivos. |

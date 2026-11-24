@@ -132,3 +132,5 @@ dialog .primario { background: var(--acento); color: #1b0f0a; border-color: var(
 details.arquivo { margin: 4px 0; border: 1px solid var(--linha); border-radius: 6px; background: #0f0e0d; }
 details.arquivo summary { cursor: pointer; padding: 3px 8px; font: 11.5px ui-monospace, monospace; color: var(--amarelo); }
 details.arquivo pre { margin: 0; border: 0; border-top: 1px solid var(--linha); border-radius: 0; max-height: 260px; overflow: auto; }
+.modo.gratis { background: #1f3a2a; color: #9be0b4; }
+.selo.gratis { border-style: solid; border-color: #2f6b45; color: #9be0b4; }
